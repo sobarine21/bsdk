@@ -16,7 +16,7 @@ import assemblyai as aai
 # Download necessary corpora for NLTK
 nltk.download('vader_lexicon')
 
-# Set up Assembly AI API details
+# Set up AssemblyAI API details
 aai.settings.api_key = st.secrets["ASSEMBLY_AI_API_TOKEN"]
 
 # Function to cycle through available Gemini models and corresponding API keys
@@ -40,10 +40,10 @@ if GOOGLE_API_KEY is not None:
 else:
     st.error("No valid API key found for any Gemini model.")
 
-# Function to send the audio file to Assembly AI for transcription
+# Function to send the audio file to AssemblyAI for transcription
 def transcribe_audio(file):
     try:
-        # Upload the audio file to Assembly AI
+        # Upload the audio file to AssemblyAI
         upload_response = requests.post(
             "https://api.assemblyai.com/v2/upload",
             headers={"authorization": aai.settings.api_key},
