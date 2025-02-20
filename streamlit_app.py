@@ -1,5 +1,5 @@
 import streamlit as st
-import requests
+import assemblyai as aai
 from sklearn.feature_extraction.text import CountVectorizer
 import numpy as np
 import google.generativeai as genai
@@ -9,48 +9,34 @@ import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 import langid
 from collections import Counter
-import time
 import os
+import time
 
 # Download necessary corpora for NLTK
 nltk.download('vader_lexicon')
 
-# Set up My Assembly API details
-ASSEMBLY_API_URL = "https://api.assemblyai.com/v2/transcript"
-ASSEMBLY_API_KEY = st.secrets["ASSEMBLY_API_KEY"]
-HEADERS = {"Authorization": f"Bearer {ASSEMBLY_API_KEY}"}
+# Set up AssemblyAI API key
+aai.settings.api_key = st.secrets["ASSEMBLY_API_KEY"]  # Set your API key here
 
-# Function to send the audio file to My Assembly API for transcription
+# Function to send the audio file to AssemblyAI API for transcription
 def transcribe_audio(file):
     try:
-        # Upload the file first to AssemblyAI
-        upload_url = "https://api.assemblyai.com/v2/upload"
-        response_upload = requests.post(upload_url, headers=HEADERS, files={"file": file})
+        # Create a Transcriber instance
+        transcriber = aai.Transcriber()
         
-        if response_upload.status_code == 200:
-            audio_url = response_upload.json().get("upload_url")
-            # Once uploaded, send the audio URL for transcription
-            transcript_request = {
-                "audio_url": audio_url
-            }
-            response_transcription = requests.post(ASSEMBLY_API_URL, headers=HEADERS, json=transcript_request)
-            
-            if response_transcription.status_code == 200:
-                # Wait for the transcription to complete (use polling)
-                transcript_id = response_transcription.json().get("id")
-                while True:
-                    response_check = requests.get(f"{ASSEMBLY_API_URL}/{transcript_id}", headers=HEADERS)
-                    if response_check.status_code == 200:
-                        result = response_check.json()
-                        if result["status"] == "completed":
-                            return result  # Return transcription
-                        elif result["status"] == "failed":
-                            return {"error": "Transcription failed"}
-                    time.sleep(5)  # Poll every 5 seconds
-            else:
-                return {"error": f"API Error: {response_transcription.status_code} - {response_transcription.text}"}
+        # If the file is uploaded, save it temporarily
+        with open("temp_audio_file", "wb") as f:
+            f.write(file.read())
+        
+        # Transcribe the local file
+        transcript = transcriber.transcribe("temp_audio_file")
+        
+        # Check for errors and return result
+        if transcript.status == aai.TranscriptStatus.error:
+            return {"error": transcript.error}
         else:
-            return {"error": f"API Error: {response_upload.status_code} - {response_upload.text}"}
+            return {"text": transcript.text}  # Return transcription text
+
     except Exception as e:
         return {"error": str(e)}
 
@@ -117,7 +103,7 @@ def generate_word_cloud(text):
 
 # Streamlit UI
 st.title("🎙️ Audio Transcription & Analysis Web App")
-st.write("Upload an audio file, and this app will transcribe it using My Assembly API.")
+st.write("Upload an audio file, and this app will transcribe it using AssemblyAI.")
 
 # File uploader
 uploaded_file = st.file_uploader("Upload your audio file (e.g., .wav, .flac, .mp3)", type=["wav", "flac", "mp3"])
