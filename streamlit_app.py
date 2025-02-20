@@ -11,58 +11,46 @@ import langid
 from collections import Counter
 import time
 import os
-import assemblyai as aai
 
 # Download necessary corpora for NLTK
 nltk.download('vader_lexicon')
 
-# Set up AssemblyAI API details
-aai.settings.api_key = st.secrets["ASSEMBLY_AI_API_TOKEN"]
+# Set up My Assembly API details
+ASSEMBLY_API_URL = "https://api.assemblyai.com/v2/transcript"
+ASSEMBLY_API_KEY = st.secrets["ASSEMBLY_API_KEY"]
+HEADERS = {"Authorization": f"Bearer {ASSEMBLY_API_KEY}"}
 
-# Function to cycle through available Gemini models and corresponding API keys
-def get_next_model_and_key():
-    """Cycle through available Gemini models and corresponding API keys."""
-    models_and_keys = [
-        ('gemini-1.5-flash', os.getenv("API_KEY_GEMINI_1_5_FLASH")),
-        ('gemini-2.0-flash', os.getenv("API_KEY_GEMINI_2_0_FLASH")),
-        ('gemini-1.5-flash-8b', os.getenv("API_KEY_GEMINI_1_5_FLASH_8B")),
-        ('gemini-2.0-flash-exp', os.getenv("API_KEY_GEMINI_2_0_FLASH_EXP")),
-    ]
-    for model, key in models_and_keys:
-        if key:
-            return model, key
-    return None, None
-
-# Retrieve and configure the generative AI API key
-model_name, GOOGLE_API_KEY = get_next_model_and_key()
-if GOOGLE_API_KEY is not None:
-    genai.configure(api_key=GOOGLE_API_KEY)
-else:
-    st.error("No valid API key found for any Gemini model.")
-
-# Function to send the audio file to AssemblyAI for transcription
+# Function to send the audio file to My Assembly API for transcription
 def transcribe_audio(file):
     try:
-        # Upload the audio file to AssemblyAI
-        upload_response = requests.post(
-            "https://api.assemblyai.com/v2/upload",
-            headers={"authorization": aai.settings.api_key},
-            files={"file": file}
-        )
-        if upload_response.status_code != 200:
-            return {"error": f"Upload Error: {upload_response.status_code} - {upload_response.text}"}
-
-        audio_url = upload_response.json()["upload_url"]
-
-        # Request transcription
-        transcriber = aai.Transcriber()
-        config = aai.TranscriptionConfig(speaker_labels=True)
-        transcript = transcriber.transcribe(audio_url, config)
+        # Upload the file first to AssemblyAI
+        upload_url = "https://api.assemblyai.com/v2/upload"
+        response_upload = requests.post(upload_url, headers=HEADERS, files={"file": file})
         
-        if transcript.status == aai.TranscriptStatus.error:
-            return {"error": f"Transcription failed: {transcript.error}"}
-        
-        return transcript
+        if response_upload.status_code == 200:
+            audio_url = response_upload.json().get("upload_url")
+            # Once uploaded, send the audio URL for transcription
+            transcript_request = {
+                "audio_url": audio_url
+            }
+            response_transcription = requests.post(ASSEMBLY_API_URL, headers=HEADERS, json=transcript_request)
+            
+            if response_transcription.status_code == 200:
+                # Wait for the transcription to complete (use polling)
+                transcript_id = response_transcription.json().get("id")
+                while True:
+                    response_check = requests.get(f"{ASSEMBLY_API_URL}/{transcript_id}", headers=HEADERS)
+                    if response_check.status_code == 200:
+                        result = response_check.json()
+                        if result["status"] == "completed":
+                            return result  # Return transcription
+                        elif result["status"] == "failed":
+                            return {"error": "Transcription failed"}
+                    time.sleep(5)  # Poll every 5 seconds
+            else:
+                return {"error": f"API Error: {response_transcription.status_code} - {response_transcription.text}"}
+        else:
+            return {"error": f"API Error: {response_upload.status_code} - {response_upload.text}"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -129,7 +117,7 @@ def generate_word_cloud(text):
 
 # Streamlit UI
 st.title("🎙️ Audio Transcription & Analysis Web App")
-st.write("Upload an audio file, and this app will transcribe it using Assembly AI.")
+st.write("Upload an audio file, and this app will transcribe it using My Assembly API.")
 
 # File uploader
 uploaded_file = st.file_uploader("Upload your audio file (e.g., .wav, .flac, .mp3)", type=["wav", "flac", "mp3"])
@@ -145,14 +133,9 @@ if uploaded_file is not None:
     # Display the result
     if "text" in result:
         st.success("Transcription Complete:")
-        transcription_text = result.text
+        transcription_text = result["text"]
         st.write(transcription_text)
         
-        # Display speaker diarization
-        st.subheader("Speaker Diarization")
-        for utterance in result.utterances:
-            st.write(f"Speaker {utterance.speaker}: {utterance.text}")
-
         # Sentiment Analysis (VADER)
         vader_sentiment = analyze_vader_sentiment(transcription_text)
         st.subheader("Sentiment Analysis (VADER)")
@@ -249,6 +232,7 @@ if uploaded_file is not None:
         if st.button("Run AI Analysis"):
             try:
                 # Load and configure the model
+                model_name, GOOGLE_API_KEY = get_next_model_and_key()  # Use your existing function here
                 model = genai.GenerativeModel(model_name)
                 
                 # Generate response from the model
