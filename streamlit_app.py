@@ -11,17 +11,13 @@ import langid
 from collections import Counter
 import time
 import os
+import assemblyai as aai
 
 # Download necessary corpora for NLTK
 nltk.download('vader_lexicon')
 
 # Set up Assembly AI API details
-ASSEMBLY_AI_API_URL = "https://api.assemblyai.com/v2/transcript"
-ASSEMBLY_AI_API_TOKEN = st.secrets["ASSEMBLY_AI_API_TOKEN"]
-HEADERS = {
-    "authorization": ASSEMBLY_AI_API_TOKEN,
-    "content-type": "application/json"
-}
+aai.settings.api_key = st.secrets["ASSEMBLY_AI_API_TOKEN"]
 
 # Function to cycle through available Gemini models and corresponding API keys
 def get_next_model_and_key():
@@ -50,7 +46,7 @@ def transcribe_audio(file):
         # Upload the audio file to Assembly AI
         upload_response = requests.post(
             "https://api.assemblyai.com/v2/upload",
-            headers={"authorization": ASSEMBLY_AI_API_TOKEN},
+            headers={"authorization": aai.settings.api_key},
             files={"file": file}
         )
         if upload_response.status_code != 200:
@@ -59,25 +55,14 @@ def transcribe_audio(file):
         audio_url = upload_response.json()["upload_url"]
 
         # Request transcription
-        transcription_request = {
-            "audio_url": audio_url
-        }
-        response = requests.post(ASSEMBLY_AI_API_URL, headers=HEADERS, json=transcription_request)
-        if response.status_code == 200:
-            transcription_id = response.json()["id"]
-
-            # Poll for transcription result
-            while True:
-                result_response = requests.get(f"{ASSEMBLY_AI_API_URL}/{transcription_id}", headers=HEADERS)
-                if result_response.status_code == 200:
-                    result = result_response.json()
-                    if result["status"] == "completed":
-                        return result
-                    elif result["status"] == "failed":
-                        return {"error": "Transcription failed."}
-                time.sleep(5)
-        else:
-            return {"error": f"API Error: {response.status_code} - {response.text}"}
+        transcriber = aai.Transcriber()
+        config = aai.TranscriptionConfig(speaker_labels=True)
+        transcript = transcriber.transcribe(audio_url, config)
+        
+        if transcript.status == aai.TranscriptStatus.error:
+            return {"error": f"Transcription failed: {transcript.error}"}
+        
+        return transcript
     except Exception as e:
         return {"error": str(e)}
 
@@ -160,9 +145,14 @@ if uploaded_file is not None:
     # Display the result
     if "text" in result:
         st.success("Transcription Complete:")
-        transcription_text = result["text"]
+        transcription_text = result.text
         st.write(transcription_text)
         
+        # Display speaker diarization
+        st.subheader("Speaker Diarization")
+        for utterance in result.utterances:
+            st.write(f"Speaker {utterance.speaker}: {utterance.text}")
+
         # Sentiment Analysis (VADER)
         vader_sentiment = analyze_vader_sentiment(transcription_text)
         st.subheader("Sentiment Analysis (VADER)")
