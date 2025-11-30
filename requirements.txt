@@ -1,10 +1,22 @@
-streamlit
+  # Core Application & Data
+    streamlit
+    pandas
+    numpy
+
+    # Database Connector
+    psycopg2-binary
+
+    # External APIs
+    kiteconnect
+    google-generativeai
+
+    # Data Visualization & Export
+    plotly
+    openpyxl
+
+    # File Parsing
+    PyMuPDF
+ta
+supabase
 requests
-scikit-learn
-numpy
-google-generativeai
-matplotlib
-wordcloud
-nltk
-langid
-assemblyai
+scipy
